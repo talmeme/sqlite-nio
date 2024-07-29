@@ -66,6 +66,7 @@ var sqlcipherCSettings: [CSetting] { [
     // Use libtomcrypt for SQLcipher
     .unsafeFlags(["-I/usr/local/include/libtomcrypt"]),
     .define("SQLITE_HAS_CODEC"),
+    .define("SQLITE_TEMP_STORE", to: "2"),
     // Derived from sqlite3 version 3.43.0
     .define("SQLITE_DEFAULT_MEMSTATUS", to: "0"),
     .define("SQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS"),
