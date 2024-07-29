@@ -18,24 +18,25 @@ let package = Package(
     ],
     targets: [
         .plugin(
-            name: "VendorSQLite",
+            name: "VendorSQLcipher",
             capability: .command(
-                intent: .custom(verb: "vendor-sqlite", description: "Vendor SQLite"),
-                permissions: [
-                    .allowNetworkConnections(scope: .all(ports: [443]), reason: "Retrieve the latest build of SQLite"),
-                    .writeToPackageDirectory(reason: "Update the vendored SQLite files"),
-                ]
+                intent: .custom(verb: "vendor-sqlcipher", description: "Vendor SQLcipher"),
+                permissions: [.writeToPackageDirectory(reason: "Update the vendored SQLcipher files")]
             ),
             exclude: ["001-warnings-and-data-race.patch"]
         ),
         .target(
-            name: "CSQLite",
-            cSettings: sqliteCSettings
+            name: "CSQLcipher",
+            cSettings: sqlcipherCSettings,
+            linkerSettings: [
+                .linkedLibrary("sqlcipher"),
+                .unsafeFlags(["-L/usr/local/lib"])
+            ]
         ),
         .target(
             name: "SQLiteNIO",
             dependencies: [
-                .target(name: "CSQLite"),
+                .target(name: "CSQLcipher"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
@@ -61,7 +62,10 @@ var swiftSettings: [SwiftSetting] { [
     .enableExperimentalFeature("StrictConcurrency=complete"),
 ] }
 
-var sqliteCSettings: [CSetting] { [
+var sqlcipherCSettings: [CSetting] { [
+    // Use libtomcrypt for SQLcipher
+    .unsafeFlags(["-I/usr/local/include/libtomcrypt"]),
+    .define("SQLITE_HAS_CODEC"),
     // Derived from sqlite3 version 3.43.0
     .define("SQLITE_DEFAULT_MEMSTATUS", to: "0"),
     .define("SQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS"),
@@ -95,5 +99,5 @@ var sqliteCSettings: [CSetting] { [
     .define("SQLITE_SECURE_DELETE"),
     .define("SQLITE_THREADSAFE", to: "1"),
     .define("SQLITE_UNTESTABLE"),
-    .define("SQLITE_USE_URI"),
+    .define("SQLITE_USE_URI")
 ] }
