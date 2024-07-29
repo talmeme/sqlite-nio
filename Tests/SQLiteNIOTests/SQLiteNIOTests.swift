@@ -5,6 +5,10 @@ import NIOCore
 import NIOPosix
 import NIOFoundationCompat
 
+func mkTempFileUrl() -> URL {
+    return FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+}
+
 /// Run the provided closure with an opened ``SQLiteConnection`` using an in-memory database and the singleton thread
 /// pool and event loop, guaranteeing that the connection is correctly cleaned up afterwards regardless of errors.
 func withOpenedConnection<T>(
@@ -115,6 +119,75 @@ final class SQLiteNIOTests: XCTestCase {
         }
     }
 
+    // Use an on-disk database file to test encrypted database.
+    func testEncryptedTimestampStorageInDateColumnIntegralValue() async throws {
+        let tmpFileUrl = mkTempFileUrl()
+        let tmpFilePath = tmpFileUrl.absoluteString
+        let conn = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+        do {
+            _ = try await conn.query(#"PRAGMA key = 'abc'"#)
+            let date = Date(timeIntervalSince1970: 42)
+            // This is how a column of type .date is crated when using Vapor’s
+            // scheme table creation.
+            _ = try await conn.query(#"CREATE TABLE "test" ("date" DATE NOT NULL)"#)
+            _ = try await conn.query(#"INSERT INTO test (date) VALUES (?)"#, [date.sqliteData!])
+            let rows = try await conn.query("SELECT * FROM test")
+
+            XCTAssertTrue(rows.first?.column("date") == .float(date.timeIntervalSince1970) || rows.first?.column("date") == .integer(Int(date.timeIntervalSince1970)))
+            XCTAssertEqual(rows.first?.column("date").flatMap(Date.init(sqliteData:))?.description, date.description)
+
+            // Test providing cipher key in another connection.
+            let conn2 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                _ = try await conn2.query(#"PRAGMA key = 'abc'"#)
+                let rows = try await conn2.query("SELECT * FROM test")
+
+                XCTAssertTrue(rows.first?.column("date") == .float(date.timeIntervalSince1970) || rows.first?.column("date") == .integer(Int(date.timeIntervalSince1970)))
+                XCTAssertEqual(rows.first?.column("date").flatMap(Date.init(sqliteData:))?.description, date.description)
+
+                try await conn2.close()
+            } catch {
+                try? await conn2.close()
+                throw error
+            }
+
+            // Test using yet another connection without providing cipher key.
+            let conn3 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                await XCTAssertThrowsErrorAsync(try await conn3.query("SELECT * FROM test")) {
+                    guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
+                    XCTAssertEqual(error.reason, SQLiteError.Reason.notADatabase)
+                }
+                try await conn3.close()
+            } catch {
+                try? await conn3.close()
+                throw error
+            }
+
+            // Test using yet another connection with wrong cipher key.
+            let conn4 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                _ = try await conn4.query(#"PRAGMA key = 'xyz'"#)
+                await XCTAssertThrowsErrorAsync(try await conn4.query("SELECT * FROM test")) {
+                    guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
+                    XCTAssertEqual(error.reason, SQLiteError.Reason.notADatabase)
+                }
+                try await conn4.close()
+            } catch {
+                try? await conn4.close()
+                throw error
+            }
+
+            try await conn.close()
+            try FileManager.default.removeItem(at: tmpFileUrl)
+
+        } catch {
+            try? await conn.close()
+            try FileManager.default.removeItem(at: tmpFileUrl)
+            throw error
+        }
+    }
+
     func testDuplicateColumnName() async throws {
         try await withOpenedConnection { conn in
             let rows = try await conn.query("SELECT 1 as foo, 2 as foo")
@@ -131,7 +204,7 @@ final class SQLiteNIOTests: XCTestCase {
         }
     }
 
-	func testCustomAggregate() async throws {
+    func testCustomAggregate() async throws {
         try await withOpenedConnection { conn in
             _ = try await conn.query(#"CREATE TABLE "scores" ("score" INTEGER NOT NULL)"#)
             _ = try await conn.query(#"INSERT INTO scores (score) VALUES (?), (?), (?)"#, [.integer(3), .integer(4), .integer(5)])
@@ -153,9 +226,92 @@ final class SQLiteNIOTests: XCTestCase {
             let rows = try await conn.query("SELECT my_sum(score) as total_score FROM scores")
             XCTAssertEqual(rows.first?.column("total_score")?.integer, 12)
         }
-	}
+    }
 
-	func testDatabaseFunction() async throws {
+    // Use an on-disk database file to test encrypted database.
+    func testEncryptedCustomAggregate() async throws {
+        let tmpFileUrl = mkTempFileUrl()
+        let tmpFilePath = tmpFileUrl.absoluteString
+        let conn = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+        do {
+            _ = try await conn.query(#"PRAGMA key = 'abc'"#)
+            _ = try await conn.query(#"CREATE TABLE "scores" ("score" INTEGER NOT NULL)"#)
+            _ = try await conn.query(#"INSERT INTO scores (score) VALUES (?), (?), (?)"#, [.integer(3), .integer(4), .integer(5)])
+
+            struct MyAggregate: SQLiteCustomAggregate {
+                var sum: Int = 0
+                mutating func step(_ values: [SQLiteData]) throws {
+                    self.sum += (values.first?.integer ?? 0)
+                }
+
+                func finalize() throws -> (any SQLiteDataConvertible)? {
+                    self.sum
+                }
+            }
+
+            let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
+            try await conn.install(customFunction: function)
+
+            let rows = try await conn.query("SELECT my_sum(score) as total_score FROM scores")
+            XCTAssertEqual(rows.first?.column("total_score")?.integer, 12)
+
+            // Test providing cipher key in another connection.
+            let conn2 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                _ = try await conn2.query(#"PRAGMA key = 'abc'"#)
+                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
+                try await conn2.install(customFunction: function)
+
+                let rows = try await conn.query("SELECT my_sum(score) as total_score FROM scores")
+                XCTAssertEqual(rows.first?.column("total_score")?.integer, 12)
+
+                try await conn2.close()
+            } catch {
+                try? await conn2.close()
+                throw error
+            }
+
+            // Test using yet another connection without providing cipher key.
+            let conn3 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
+                try await conn3.install(customFunction: function)
+                await XCTAssertThrowsErrorAsync(try await conn3.query("SELECT my_sum(score) as total_score FROM scores")) {
+                    guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
+                    XCTAssertEqual(error.reason, SQLiteError.Reason.notADatabase)
+                }
+                try await conn3.close()
+            } catch {
+                try? await conn3.close()
+                throw error
+            }
+
+            // Test using yet another connection with wrong cipher key.
+            let conn4 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
+            do {
+                _ = try await conn4.query(#"PRAGMA key = 'xyz'"#)
+                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
+                try await conn4.install(customFunction: function)
+                await XCTAssertThrowsErrorAsync(try await conn4.query("SELECT my_sum(score) as total_score FROM scores")) {
+                    guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
+                    XCTAssertEqual(error.reason, SQLiteError.Reason.notADatabase)
+                }
+                try await conn4.close()
+            } catch {
+                try? await conn4.close()
+                throw error
+            }
+
+            try await conn.close()
+            try FileManager.default.removeItem(at: tmpFileUrl)
+        } catch {
+            try? await conn.close()
+            try FileManager.default.removeItem(at: tmpFileUrl)
+            throw error
+        }
+    }
+
+    func testDatabaseFunction() async throws {
         try await withOpenedConnection { conn in
             let function = SQLiteCustomFunction("my_custom_function", argumentCount: 1, pure: true) { args in
                 Int(args[0].integer! * 3)
@@ -165,7 +321,7 @@ final class SQLiteNIOTests: XCTestCase {
             let rows = try await conn.query("SELECT my_custom_function(2) as my_value")
             XCTAssertEqual(rows.first?.column("my_value")?.integer, 6)
         }
-	}
+    }
 
     func testSingletonEventLoopOpen() async throws {
         var conn: SQLiteConnection? = nil
