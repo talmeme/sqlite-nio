@@ -259,7 +259,6 @@ final class SQLiteNIOTests: XCTestCase {
             let conn2 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
             do {
                 _ = try await conn2.query(#"PRAGMA key = 'abc'"#)
-                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
                 try await conn2.install(customFunction: function)
 
                 let rows = try await conn.query("SELECT my_sum(score) as total_score FROM scores")
@@ -274,7 +273,6 @@ final class SQLiteNIOTests: XCTestCase {
             // Test using yet another connection without providing cipher key.
             let conn3 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
             do {
-                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
                 try await conn3.install(customFunction: function)
                 await XCTAssertThrowsErrorAsync(try await conn3.query("SELECT my_sum(score) as total_score FROM scores")) {
                     guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
@@ -290,7 +288,6 @@ final class SQLiteNIOTests: XCTestCase {
             let conn4 = try await SQLiteConnection.open(storage: .file(path: tmpFilePath))
             do {
                 _ = try await conn4.query(#"PRAGMA key = 'xyz'"#)
-                //let function = SQLiteCustomFunction("my_sum", argumentCount: 1, pure: true, aggregate: MyAggregate.self)
                 try await conn4.install(customFunction: function)
                 await XCTAssertThrowsErrorAsync(try await conn4.query("SELECT my_sum(score) as total_score FROM scores")) {
                     guard let error = $0 as? SQLiteError else { return XCTFail("Expected SQLiteError, got \(String(reflecting: $0))") }
