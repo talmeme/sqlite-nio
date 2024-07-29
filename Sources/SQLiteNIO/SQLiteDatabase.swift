@@ -1,6 +1,6 @@
 import NIOCore
 import NIOPosix
-import CSQLite
+import CSQLcipher
 import Logging
 
 /// A protocol describing the minimum requirements for an object allowing access to a generic SQLite database.

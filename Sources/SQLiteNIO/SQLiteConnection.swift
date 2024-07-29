@@ -3,7 +3,7 @@ import NIOCore
 import NIOConcurrencyHelpers
 #endif
 import NIOPosix
-import CSQLite
+import CSQLcipher
 import Logging
 
 /// A wrapper for the `OpaquePointer` used to represent an open `sqlite3` handle.

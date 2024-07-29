@@ -1,4 +1,4 @@
-import CSQLite
+import CSQLcipher
 import NIOCore
 
 /// Encapsulates a single data item provided by or to SQLite.
