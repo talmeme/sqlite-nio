@@ -1,0 +1,2 @@
+// SQLcipher 4.6.0 is based on SQLite 3.45.3.
+3.45.3
