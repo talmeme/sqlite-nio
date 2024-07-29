@@ -29,7 +29,7 @@ let package = Package(
             name: "CSQLcipher",
             cSettings: sqlcipherCSettings,
             linkerSettings: [
-                .linkedLibrary("sqlcipher"),
+                .linkedLibrary("tomcrypt"),
                 .unsafeFlags(["-L/usr/local/lib"])
             ]
         ),
