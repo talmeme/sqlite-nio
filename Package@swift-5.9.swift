@@ -1,6 +1,20 @@
 // swift-tools-version:5.9
 import PackageDescription
 
+#if os(macOS)
+var csqlcipherUnsafeFlags = ["-L/opt/local/lib"]
+var sqlcipherCSetting = ["-I/opt/local/include/openssl-3"]
+#endif
+#if os(Linux)
+    #if arch(x86_64)
+var csqlcipherUnsafeFlags = ["-L/usr/lib/x86_64-linux-gnu"]
+    #endif
+    #if arch(arm64)
+var csqlcipherUnsafeFlags = ["-L/usr/lib/aarch64-linux-gnu"]
+    #endif
+var sqlcipherCSetting = ["-I/usr/include"]
+#endif
+
 let package = Package(
     name: "sqlite-nio",
     platforms: [
@@ -29,8 +43,8 @@ let package = Package(
             name: "CSQLcipher",
             cSettings: sqlcipherCSettings,
             linkerSettings: [
-                .linkedLibrary("tomcrypt"),
-                .unsafeFlags(["-L/usr/local/lib"])
+                .linkedLibrary("crypto"),
+                .unsafeFlags(csqlcipherUnsafeFlags)
             ]
         ),
         .target(
@@ -63,8 +77,8 @@ var swiftSettings: [SwiftSetting] { [
 ] }
 
 var sqlcipherCSettings: [CSetting] { [
-    // Use libtomcrypt for SQLcipher
-    .unsafeFlags(["-I/usr/local/include/libtomcrypt"]),
+    // Use OpenSSL for SQLcipher
+    .unsafeFlags(sqlcipherCSetting),
     .define("SQLITE_HAS_CODEC"),
     .define("SQLITE_TEMP_STORE", to: "2"),
     // Derived from sqlite3 version 3.43.0
