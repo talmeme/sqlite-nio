@@ -27,11 +27,7 @@ let package = Package(
         ),
         .target(
             name: "CSQLcipher",
-            cSettings: sqlcipherCSettings,
-            linkerSettings: [
-                .linkedLibrary("tomcrypt"),
-                .unsafeFlags(["-L/usr/local/lib"])
-            ]
+            cSettings: sqlcipherCSettings
         ),
         .target(
             name: "SQLiteNIO",
@@ -64,7 +60,7 @@ var swiftSettings: [SwiftSetting] { [
 
 var sqlcipherCSettings: [CSetting] { [
     // Use libtomcrypt for SQLcipher
-    .unsafeFlags(["-I/usr/local/include/libtomcrypt"]),
+    .unsafeFlags(["-ISources/CSQLcipher/libtomcrypt/src/headers"]),
     .define("SQLITE_HAS_CODEC"),
     .define("SQLITE_TEMP_STORE", to: "2"),
     // Derived from sqlite3 version 3.43.0

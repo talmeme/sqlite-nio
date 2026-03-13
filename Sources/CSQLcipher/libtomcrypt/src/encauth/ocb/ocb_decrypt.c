@@ -1,0 +1,59 @@
+/* LibTomCrypt, modular cryptographic library -- Tom St Denis */
+/* SPDX-License-Identifier: Unlicense */
+
+/**
+   @file ocb_decrypt.c
+   OCB implementation, decrypt data, by Tom St Denis
+*/
+#include "tomcrypt_private.h"
+
+#ifdef LTC_OCB_MODE
+
+/**
+  Decrypt a block with OCB.
+  @param ocb    The OCB state
+  @param ct     The ciphertext (length of the block size of the block cipher)
+  @param pt     [out] The plaintext (length of ct)
+  @return CRYPT_OK if successful
+*/
+int ocb_decrypt(ocb_state *ocb, const unsigned char *ct, unsigned char *pt)
+{
+   unsigned char Z[MAXBLOCKSIZE], tmp[MAXBLOCKSIZE];
+   int err, x;
+
+   LTC_ARGCHK(ocb != NULL);
+   LTC_ARGCHK(pt  != NULL);
+   LTC_ARGCHK(ct  != NULL);
+
+   /* can't use a encrypt-only descriptor */
+   LTC_ARGCHK(cipher_descriptor[ocb->key.cipher].ecb_decrypt != NULL);
+
+   /* Get Z[i] value */
+   ocb_shift_xor(ocb, Z);
+
+   /* xor ct in, encrypt, xor Z out */
+   for (x = 0; x < ocb->block_len; x++) {
+       tmp[x] = ct[x] ^ Z[x];
+   }
+   if ((err = ecb_decrypt_block(tmp, pt, &ocb->key)) != CRYPT_OK) {
+      return err;
+   }
+   for (x = 0; x < ocb->block_len; x++) {
+       pt[x] ^= Z[x];
+   }
+
+   /* compute checksum */
+   for (x = 0; x < ocb->block_len; x++) {
+       ocb->checksum[x] ^= pt[x];
+   }
+
+
+#ifdef LTC_CLEAN_STACK
+   zeromem(Z, sizeof(Z));
+   zeromem(tmp, sizeof(tmp));
+#endif
+   return CRYPT_OK;
+}
+
+#endif
+
